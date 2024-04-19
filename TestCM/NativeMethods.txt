@@ -1,0 +1,4 @@
+﻿CM_*
+CfgMgr32.*
+DEVPKEY_*
+PKEY_*
