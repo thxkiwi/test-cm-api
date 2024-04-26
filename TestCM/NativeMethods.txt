@@ -2,6 +2,9 @@
 CfgMgr32.*
 DEVPKEY_*
 PKEY_*
+KEY_*
+REG_*
+Reg*
 SECURITY_DESCRIPTOR
 FILETIME
 Advapi32.*
