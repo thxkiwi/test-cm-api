@@ -266,7 +266,7 @@ namespace TestCM
                     ret = PInvoke.CM_Open_DevNode_Key(_devNode,
                         (uint)Windows.Win32.System.Registry.REG_SAM_FLAGS.KEY_READ,
                         0, // Use current hardware profile
-                        (uint)1, //REG_CREATE_KEY_DISPOSITION.REG_OPENED_EXISTING_KEY is 2 but RegDisposition_OpenExisting == 0x1 in CfgMgr.h
+                        PInvoke.RegDisposition_OpenExisting, 
                         out hkey,
                         PInvoke.CM_REGISTRY_SOFTWARE);
                     switch (ret)
