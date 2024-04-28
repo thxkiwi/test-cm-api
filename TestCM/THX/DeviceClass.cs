@@ -56,7 +56,7 @@ namespace THX
                 }
             }
 
-            return deviceIDs.ToList();
+            return [.. deviceIDs ?? []];
         }
 
         public static string GetName(Guid cmClassId)
