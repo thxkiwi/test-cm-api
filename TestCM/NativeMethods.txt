@@ -1,10 +1,13 @@
-﻿CM_*
+﻿Advapi32.*
 CfgMgr32.*
+CM_*
 DEVPKEY_*
 PKEY_*
-KEY_*
-REG_*
+KEY*
+REG*
 RegDisposition_*
 SECURITY_DESCRIPTOR
 FILETIME
-Advapi32.*
+EDataFlow
+ERole
+APO_FLAG

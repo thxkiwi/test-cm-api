@@ -1,16 +1,8 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using Windows.Win32;
 
-using Windows.Win32;
-using Windows.Win32.Devices.DeviceAndDriverInstallation;
-using Windows.Win32.Devices.Properties;
-
-namespace TestCM
+namespace THX
 {
-    internal class ExtensionInf
+    public class ExtensionInf
     {
         internal static ExtensionInf Parse(string extendedConfigurationId)
         {

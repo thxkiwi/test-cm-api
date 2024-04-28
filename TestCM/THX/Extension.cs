@@ -1,29 +1,40 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Runtime.InteropServices;
-using System.Text;
-using System.Threading.Tasks;
-
+﻿using System.Runtime.InteropServices;
+using Windows.Win32.Devices.Properties;
 using Windows.Win32.Foundation;
 using Windows.Win32.Security;
-using Windows.Win32.Devices.Properties;
+using Windows.Win32.UI.Shell.PropertiesSystem;
 
-namespace TestCM
+namespace THX
 {
-    internal static class Extension
+    internal static class ExtendDEVPROPKEY
     {
         // Extension Method for DEVPROPKEY.ToString()
         internal static string ToString(ref this DEVPROPKEY key)
         {
-            return $"{{{key.fmtid}}},{key.pid}";
+            return $"{key.fmtid.ToString("B")},{key.pid,-5}";
         }
 
         internal static string ToString(this DEVPROPKEY key)
         {
-            return $"{{{key.fmtid}}},{key.pid}";
+            return $"{key.fmtid.ToString("B")},{key.pid,-5}";
+        }
+    }
+
+    internal static class ExtendPROPERTYKEY
+    {
+        internal static string ToString(ref this PROPERTYKEY key)
+        {
+            return $"{key.fmtid.ToString("B")},{key.pid,-5}";
         }
 
+        internal static string ToString(this PROPERTYKEY key)
+        {
+            return $"{key.fmtid.ToString("B")},{key.pid,-5}";
+        }
+    }
+
+    internal static class Extension
+    {
         internal static T GetPropertyValue<T>(DEVPROPERTY prop)
         {
             Type requestedType = typeof(T);
@@ -49,14 +60,22 @@ namespace TestCM
                         {
                             throw new InvalidCastException($"Unable to cast property {prop.CompKey.Key} of type DEVPROPTYPE == {prop.Type} to {requestedType}");
                         }
-                        return (T)(object)Marshal.PtrToStringUni((nint)prop.Buffer, (int)prop.BufferSize / 2);
+
+                        // Device property strings have an extra NULL terminator
+                        // at the end to indicate the end of the list.
+                        // C# split does not handle the removal by marshaling 1-fewer.
+                        return (T)(object)Marshal.PtrToStringUni((nint)prop.Buffer, (int)prop.BufferSize / 2 - 1);
 
                     case DEVPROPTYPE.DEVPROP_TYPE_STRING_LIST:
                         if (requestedType != typeof(List<string>))
                         {
                             throw new InvalidCastException($"Unable to cast property {prop.CompKey.Key} of type DEVPROPTYPE == {prop.Type} to {requestedType}");
                         }
-                        string rawResult = Marshal.PtrToStringUni((nint)prop.Buffer, (int)prop.BufferSize / 2);
+
+                        // Device property strings have an extra NULL terminator
+                        // at the end to indicate the end of the list.
+                        // C# split does not handle the removal by marshaling 1-fewer.
+                        string rawResult = Marshal.PtrToStringUni((nint)prop.Buffer, (int)prop.BufferSize / 2 - 1);
                         return (T)(object)rawResult.Split('\0', StringSplitOptions.RemoveEmptyEntries).ToList();
 
                     case DEVPROPTYPE.DEVPROP_TYPE_BINARY:
@@ -77,12 +96,12 @@ namespace TestCM
                         return (T)(object)Marshal.ReadInt32((nint)prop.Buffer);
 
                     case DEVPROPTYPE.DEVPROP_TYPE_SECURITY_DESCRIPTOR:
-                        if (requestedType != typeof(Windows.Win32.Security.SECURITY_DESCRIPTOR))
+                        if (requestedType != typeof(SECURITY_DESCRIPTOR))
                         {
                             throw new InvalidCastException($"Unable to cast property {prop.CompKey.Key} of type DEVPROPTYPE == {prop.Type} to {requestedType}");
                         }
 
-                        if (sizeof(Windows.Win32.Security.SECURITY_DESCRIPTOR) > prop.BufferSize)
+                        if (sizeof(SECURITY_DESCRIPTOR) > prop.BufferSize)
                         {
                             throw new InvalidCastException(string.Format(
                                 "Unable to cast property {0} of type DEVPROPTYPE == {1} to {2}: sizeof({5}}) [{3}] > prop.BufferSize [{4}]",
@@ -93,7 +112,7 @@ namespace TestCM
                                 prop.BufferSize,
                                 typeof(SECURITY_DESCRIPTOR)));
                         }
-                        return (T)(object)Marshal.PtrToStructure<Windows.Win32.Security.SECURITY_DESCRIPTOR>((nint)prop.Buffer);
+                        return (T)(object)Marshal.PtrToStructure<SECURITY_DESCRIPTOR>((nint)prop.Buffer);
 
                     case DEVPROPTYPE.DEVPROP_TYPE_FILETIME:
                         if (requestedType != typeof(FILETIME))
@@ -138,19 +157,19 @@ namespace TestCM
                     case DEVPROPTYPE.DEVPROP_TYPE_BINARY:
                         return string.Join(",", GetPropertyValue<byte[]>(prop).Select(b => $"{b:X2}"));
                     case DEVPROPTYPE.DEVPROP_TYPE_UINT32:
-                        return GetPropertyValue<Int32>(prop).ToString();
+                        return GetPropertyValue<int>(prop).ToString();
                     case DEVPROPTYPE.DEVPROP_TYPE_UINT64:
-                        return GetPropertyValue<Int64>(prop).ToString();
+                        return GetPropertyValue<long>(prop).ToString();
                     case DEVPROPTYPE.DEVPROP_TYPE_GUID:
                         return GetPropertyValue<Guid>(prop).ToString("B");
                     case DEVPROPTYPE.DEVPROP_TYPE_NTSTATUS:
-                        return GetPropertyValue<Int32>(prop).ToString();
+                        return GetPropertyValue<int>(prop).ToString();
                     case DEVPROPTYPE.DEVPROP_TYPE_SECURITY_DESCRIPTOR:
                         SECURITY_DESCRIPTOR d = GetPropertyValue<SECURITY_DESCRIPTOR>(prop);
                         return $"Revision={d.Revision} Control=0x{d.Control:X} Owner={d.Owner} Group={d.Group} Sacl=<add support> Dacl=<add support>";
                     case DEVPROPTYPE.DEVPROP_TYPE_FILETIME:
                         FILETIME ft = GetPropertyValue<FILETIME>(prop);
-                        Int64 value = (ft.dwHighDateTime << 32) | ft.dwLowDateTime;
+                        long value = ft.dwHighDateTime << 32 | ft.dwLowDateTime;
                         return value.ToString();
                     default:
                         break;
