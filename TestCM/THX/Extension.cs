@@ -11,12 +11,12 @@ namespace THX
         // Extension Method for DEVPROPKEY.ToString()
         internal static string ToString(ref this DEVPROPKEY key)
         {
-            return $"{key.fmtid.ToString("B")},{key.pid,-5}";
+            return $"{key.fmtid.ToString("B")},{key.pid}";
         }
 
         internal static string ToString(this DEVPROPKEY key)
         {
-            return $"{key.fmtid.ToString("B")},{key.pid,-5}";
+            return $"{key.fmtid.ToString("B")},{key.pid}";
         }
     }
 
@@ -24,12 +24,12 @@ namespace THX
     {
         internal static string ToString(ref this PROPERTYKEY key)
         {
-            return $"{key.fmtid.ToString("B")},{key.pid,-5}";
+            return $"{key.fmtid.ToString("B")},{key.pid}";
         }
 
         internal static string ToString(this PROPERTYKEY key)
         {
-            return $"{key.fmtid.ToString("B")},{key.pid,-5}";
+            return $"{key.fmtid.ToString("B")},{key.pid}";
         }
     }
 
