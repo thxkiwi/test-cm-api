@@ -54,11 +54,17 @@ namespace THX
                 = new List<AudioProcessingObject>();
 
             // From the Software key of the device node, iterate over Classes\CLSID\*
-            var clsidRegBase = deviceNode.SoftwareKey.OpenSubKey("Classes\\CLSID");
-            var clsids = (clsidRegBase?.GetSubKeyNames() ?? []).Select(clsid => Guid.Parse(clsid));
-            foreach (var clsid in clsids)
+            const string clsidRegPath = "Classes\\CLSID";
+            var clsidRegBase = deviceNode.SoftwareKey.OpenSubKey(clsidRegPath);
+            if (null != clsidRegBase)
             {
-                AudioProcessingObjects.Add(new AudioProcessingObject(clsidRegBase, clsid));
+                var clsids = (clsidRegBase.GetSubKeyNames()).Select(clsid => Guid.Parse(clsid));
+                foreach (var clsid in clsids)
+                {
+                    AudioProcessingObjects.Add(new AudioProcessingObject(deviceNode.SoftwareKey,
+                                                                         clsid,
+                                                                         clsidRegPath));
+                }
             }
         }
 
