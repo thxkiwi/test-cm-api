@@ -11,11 +11,13 @@ namespace THX
     {
         private static char[] _StringListSeparators = new char[] { '\0' };
 
+        static private Dictionary<uint, DeviceNode>   _deviceNodesByDevInst = new();
         static private Dictionary<string, DeviceNode> _deviceNodesByInstanceId = new();
         static private Dictionary<string, HashSet<DeviceNode>> _deviceNodesByHardwareId = new();
 
         static private void Cache(DeviceNode node)
         {
+            _deviceNodesByDevInst[node._devNode] = node;
             _deviceNodesByInstanceId[node.InstanceID] = node;
 
             foreach (string hardwareId in node.GetProperty<List<string>>(PInvoke.DEVPKEY_Device_HardwareIds)
@@ -55,47 +57,54 @@ namespace THX
             }
 
             var deviceNodes = _deviceNodesByHardwareId[hardwareId];
-            if (deviceNodes == null)
-            {
-                throw new KeyNotFoundException($"No devices found for hardware ID = {hardwareId}");
-            }
-
             return deviceNodes;
         }
 
-        static private uint GetDnInst(string deviceId, DEVPROPKEY propKey)
+        static public DeviceNode GetByInstanceId(string deviceId)
         {
-            uint devNode = 0;
+            if (_deviceNodesByInstanceId.TryGetValue(deviceId, out DeviceNode? node))
+            {
+                return node;
+            }
             unsafe
             {
                 fixed (char* usDeviceID = deviceId)
                 {
-                    if (PInvoke.DEVPKEY_Device_InstanceId.Equals(propKey))
+                    uint devNode = 0;
+                    Windows.Win32.Foundation.PWSTR devNodeName = usDeviceID;
+                    var ret = PInvoke.CM_Locate_DevNode(&devNode, devNodeName, CM_LOCATE_DEVNODE_FLAGS.CM_LOCATE_DEVNODE_PHANTOM);
+                    if (CONFIGRET.CR_SUCCESS != ret)
                     {
-                        Windows.Win32.Foundation.PWSTR devNodeName = usDeviceID;
-                        var ret = PInvoke.CM_Locate_DevNode(&devNode, devNodeName, CM_LOCATE_DEVNODE_FLAGS.CM_LOCATE_DEVNODE_PHANTOM);
-                        if (CONFIGRET.CR_SUCCESS != ret)
-                        {
-                            throw new KeyNotFoundException($"CM_Locate_DevNode {deviceId} failed with {ret}");
-                        }
-
-                        return devNode;
+                        throw new KeyNotFoundException($"CM_Locate_DevNode {deviceId} failed with {ret}");
                     }
 
-                    if (PInvoke.DEVPKEY_Device_HardwareIds.Equals(propKey))
-                    {
-                        HashSet<DeviceNode> deviceNodes = GetByHardwareId(deviceId);
-                        if (deviceNodes.Count != 1)
-                        {
-                            throw new InvalidOperationException($"GetByHardwareId {deviceId} returned {deviceNodes.Count} devices");
-                        }
-
-                        return deviceNodes.First()._devNode;
-                    }
+                    DeviceNode deviceNode = new(devNode);
+                    Cache(deviceNode);
+                    return deviceNode;
                 }
             }
 
-            return devNode;
+        }
+
+        static private uint GetDnInst(string deviceId, DEVPROPKEY propKey)
+        {
+            if (PInvoke.DEVPKEY_Device_InstanceId.Equals(propKey))
+            {
+                return GetByInstanceId(deviceId)._devNode;
+            }
+
+            if (PInvoke.DEVPKEY_Device_HardwareIds.Equals(propKey))
+            {
+                HashSet<DeviceNode> deviceNodes = GetByHardwareId(deviceId);
+                if (deviceNodes.Count != 1)
+                {
+                    throw new InvalidOperationException($"GetByHardwareId {deviceId} returned {deviceNodes.Count} devices");
+                }
+
+                return deviceNodes.First()._devNode;
+            }
+
+            return 0;
         }
 
         private uint _devNode;
@@ -159,18 +168,25 @@ namespace THX
             }
         }
 
+        private List<DeviceNode> _children = new();
         public List<DeviceNode> Children
         {
             get
             {
+                if (0 < _children.Count)
+                {
+                    return _children;
+                }
+
                 try
                 {
-                    return GetProperty<List<string>>(PInvoke.DEVPKEY_Device_Children)
+                    _children = GetProperty<List<string>>(PInvoke.DEVPKEY_Device_Children)
                         .Select(child => new DeviceNode(child, PInvoke.DEVPKEY_Device_InstanceId)).ToList();
+                    return _children;
                 }
                 catch (KeyNotFoundException)
                 {
-                    return new List<DeviceNode>();
+                    return _children = new List<DeviceNode>();
                 }
             }
         }
@@ -291,18 +307,22 @@ namespace THX
 
         public void Dispose()
         {
-            unsafe
+            if (null != _availableProperties)
             {
-                foreach (var prop in _availableProperties)
+                unsafe
                 {
-                    Marshal.FreeHGlobal((nint)prop.Value.Buffer);
+                    foreach (var prop in _availableProperties)
+                    {
+                        Marshal.FreeHGlobal((nint)prop.Value.Buffer);
+                    }
                 }
+                _availableProperties.Clear();
             }
         }
 
         override public string ToString()
         {
-            return $"{InstanceID} ({FriendlyName})";
+            return $"{_devNode} {InstanceID} ({FriendlyName})";
         }
 
         public override bool Equals(object? obj)
@@ -316,9 +336,7 @@ namespace THX
             return _devNode.GetHashCode();
         }
 
-        public void WriteDetailed(TextWriter writer, string indent = "")
-        {
-            Dictionary<string, DEVPROPKEY> headerProperties = new()
+        private static readonly Dictionary<string, DEVPROPKEY> _headerProperties = new()
         {
             { "Friendly Name", PInvoke.DEVPKEY_Device_FriendlyName },
             { "Description", PInvoke.DEVPKEY_Device_DeviceDesc  },
@@ -338,43 +356,49 @@ namespace THX
             { "Has Problem?", PInvoke.DEVPKEY_Device_HasProblem },
             { "Problem Code", PInvoke.DEVPKEY_Device_ProblemCode },
             { "Problem Status", PInvoke.DEVPKEY_Device_ProblemStatus },
-            { "Driver INF Path", PInvoke.DEVPKEY_Device_DriverInfPath }
+            { "Driver INF Path", PInvoke.DEVPKEY_Device_DriverInfPath },
+            { "Children", PInvoke.DEVPKEY_Device_Children },
+            { "Siblings", PInvoke.DEVPKEY_Device_Siblings }
         };
 
-            int width = (int)(headerProperties.Keys.ToList()
+        private static readonly int _width = (int)(_headerProperties.Keys.ToList()
                 .Concat(new[] { "Available Properties", "Extensions", "Children", "AudioProcessingObjects", "Unresolved AudioProcessingObjects" })
                 .Max(s => (uint)s.Length) + 1);
 
-            foreach (var kv in headerProperties)
+
+        public void WriteDetailed(TextWriter writer, string indent = "")
+        {
+            writer.WriteLine($"{indent}{this}");
+            foreach (var kv in _headerProperties)
             {
                 try
                 {
                     DEVPROPERTY prop = GetProperty(kv.Value);
-                    writer.WriteLine($"{indent}{kv.Key.PadRight(width)}: {Extension.GetPropertyString(prop)}");
+                    writer.WriteLine($"{indent}{kv.Key.PadRight(_width)}: {Extension.GetPropertyString(prop)}");
                 }
                 catch (KeyNotFoundException)
                 {
-                    writer.WriteLine($"{indent}{kv.Key.PadRight(width)}: <not found>");
+                    writer.WriteLine($"{indent}{kv.Key.PadRight(_width)}: <not found>");
                 }
                 catch (NotSupportedException nse)
                 {
-                    writer.WriteLine($"{indent}{kv.Key.PadRight(width)}: {nse}");
+                    writer.WriteLine($"{indent}{kv.Key.PadRight(_width)}: {nse}");
                 }
             }
 
-            writer.WriteLine($"{indent}{"Available Properties".PadRight(width)}: {_availableProperties.Count}");
+            writer.WriteLine($"{indent}{"Available Properties".PadRight(_width)}: {_availableProperties.Count}");
             foreach (var kv in _availableProperties)
             {
-                writer.WriteLine($"{indent}\t{ExtendDEVPROPKEY.ToString(kv.Key)} {kv.Value.Type,-35} : {Extension.GetPropertyString(kv.Value)}");
-                }
+                writer.WriteLine($"{indent}\t{ExtendDEVPROPKEY.ToString(kv.Key),-45} {kv.Value.Type,-35} : {Extension.GetPropertyString(kv.Value)}");
+            }
 
-            writer.WriteLine($"{indent}{"Extensions".PadRight(width)} : {ExtensionInfs.Count}");
+            writer.WriteLine($"{indent}{"Extensions".PadRight(_width)} : {ExtensionInfs.Count}");
             foreach (var extension in ExtensionInfs)
             {
                 writer.WriteLine($"{indent}\t{extension}");
             }
 
-            writer.WriteLine($"{indent}{"Children".PadRight(width)} : {Children.Count}");
+            writer.WriteLine($"{indent}{"Children".PadRight(_width)} : {Children.Count}");
             foreach (var child in Children)
             {
                 if (child.DeviceClass.Equals(THX.DeviceClass.AudioEndpoint))
