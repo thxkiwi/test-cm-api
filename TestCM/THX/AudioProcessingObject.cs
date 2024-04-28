@@ -204,13 +204,13 @@ namespace THX
         public void WriteDetailed(TextWriter writer, string indent = "")
         {
             writer.WriteLine($"{indent}{ToString()}");
-            writer.WriteLine($"{indent}  Source: {Source}");
-            writer.WriteLine($"{indent}  ServerType: {ServerType}");
-            writer.WriteLine($"{indent}  ServerPath: {ServerPath}");
-            writer.WriteLine($"{indent}  ThreadingModel: {ThreadingModel}");
-            writer.WriteLine($"{indent}  MajorVersion: {MajorVersion}");
-            writer.WriteLine($"{indent}  MinorVersion: {MinorVersion}");
-            writer.Write($"{indent}  Flags: 0x{Flags:x8} [");
+            writer.WriteLine($"{indent}\tSource: {Source}");
+            writer.WriteLine($"{indent}\tServerType: {ServerType}");
+            writer.WriteLine($"{indent}\tServerPath: {ServerPath}");
+            writer.WriteLine($"{indent}\tThreadingModel: {ThreadingModel}");
+            writer.WriteLine($"{indent}\tMajorVersion: {MajorVersion}");
+            writer.WriteLine($"{indent}\tMinorVersion: {MinorVersion}");
+            writer.Write($"{indent}\tFlags: 0x{Flags:x8} [");
             if (0 == Flags)
             {
                 writer.Write("APO_FLAG_NONE");
@@ -224,15 +224,15 @@ namespace THX
             writer.Write(string.Join(" | ", flagsSet));
             
             writer.WriteLine("]");
-            writer.WriteLine($"{indent}  MinInputConnections: {MinInputConnections}");
-            writer.WriteLine($"{indent}  MaxInputConnections: {MaxInputConnections}");
-            writer.WriteLine($"{indent}  MinOutputConnections: {MinOutputConnections}");
-            writer.WriteLine($"{indent}  MaxOutputConnections: {MaxOutputConnections}");
-            writer.WriteLine($"{indent}  MaxInstances: {MaxInstances}");
-            writer.WriteLine($"{indent}  APOInterfaces:");
+            writer.WriteLine($"{indent}\tMinInputConnections: {MinInputConnections}");
+            writer.WriteLine($"{indent}\tMaxInputConnections: {MaxInputConnections}");
+            writer.WriteLine($"{indent}\tMinOutputConnections: {MinOutputConnections}");
+            writer.WriteLine($"{indent}\tMaxOutputConnections: {MaxOutputConnections}");
+            writer.WriteLine($"{indent}\tMaxInstances: {MaxInstances}");
+            writer.WriteLine($"{indent}\tAPOInterfaces:");
             foreach (var interfaceGuid in APOInterfaces)
             {
-                writer.WriteLine($"{indent}    {interfaceGuid.ToString("B")}");
+                writer.WriteLine($"{indent}\t\t{interfaceGuid.ToString("B")}");
             }
 
 
