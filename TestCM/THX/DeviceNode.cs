@@ -240,6 +240,44 @@ namespace THX
             }
         }
 
+        private List<AudioEndpoint> _audioEndpoints = new();
+
+        public List<AudioEndpoint> AudioEndpoints
+        {
+            get
+            {
+                if (0 < _audioEndpoints.Count)
+                {
+                    return _audioEndpoints;
+                }
+
+                _audioEndpoints = Children
+                    .Where(child => child.DeviceClass.Equals(THX.DeviceClass.AudioEndpoint))
+                    .Select(child => new AudioEndpoint(child))
+                    .ToList();
+                return _audioEndpoints;
+            }
+        }
+
+        private List<AudioProcessingObjectInf> _audioProcessingObjectInfs = new();
+
+        public List<AudioProcessingObjectInf> AudioProcessingObjectInfs
+        {
+            get
+            {
+                if (0 < _audioProcessingObjectInfs.Count)
+                {
+                    return _audioProcessingObjectInfs;
+                }
+
+                _audioProcessingObjectInfs = Children
+                    .Where(child => child.DeviceClass.Equals(THX.DeviceClass.AudioProcessingObject))
+                    .Select(child => new AudioProcessingObjectInf(child))
+                    .ToList();
+                return _audioProcessingObjectInfs;
+            }
+        }
+
         ///
         internal DeviceNode(string deviceId,
                           DEVPROPKEY idPropertyKey)
