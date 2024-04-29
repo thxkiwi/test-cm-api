@@ -15,6 +15,13 @@ namespace THX
         static private Dictionary<string, DeviceNode> _deviceNodesByInstanceId = new();
         static private Dictionary<string, HashSet<DeviceNode>> _deviceNodesByHardwareId = new();
 
+        /// \details Locks on 
+        /// <ol>
+        /// <li>_deviceNodesByInstanceId</li>
+        /// <li>_deviceNodesByHardwareId</li>
+        /// <li>_deviceNodesByDevInst</li>
+        /// </ol>
+        /// must be acquired in that order before calling this method.
         static private void Cache(DeviceNode node)
         {
             _deviceNodesByDevInst[node._devNode] = node;
@@ -31,59 +38,68 @@ namespace THX
 
         static public HashSet<DeviceNode> GetByHardwareId(string hardwareId)
         {
-            if (0 == _deviceNodesByHardwareId.Count)
+            lock (_deviceNodesByInstanceId)
+            lock (_deviceNodesByHardwareId)
+            lock (_deviceNodesByDevInst)
             {
-                /// \todo Is there a better way to get all device IDs?
-                var dcs =  THX.DeviceClass.GetClasses(CM_ENUMERATE_FLAGS.CM_ENUMERATE_CLASSES_INSTALLER);
-                foreach (var dc in dcs)
+                if (0 == _deviceNodesByHardwareId.Count)
                 {
-                    var diids = THX.DeviceClass.GetDeviceIds(dc);
-                    foreach (var diid in diids)
+                    /// \todo Is there a better way to get all device IDs?
+                    var dcs =  THX.DeviceClass.GetClasses(CM_ENUMERATE_FLAGS.CM_ENUMERATE_CLASSES_INSTALLER);
+                    foreach (var dc in dcs)
                     {
-                        try
+                        var diids = THX.DeviceClass.GetDeviceIds(dc);
+                        foreach (var diid in diids)
                         {
-                            DeviceNode n = new (diid, PInvoke.DEVPKEY_Device_InstanceId);
-                            Cache(n);
+                            try
+                            {
+                                DeviceNode n = new (diid, PInvoke.DEVPKEY_Device_InstanceId);
+                                Cache(n);
+                            }
+                            catch (KeyNotFoundException)
+                            { }
                         }
-                        catch (KeyNotFoundException)
-                        { }
                     }
                 }
-            }
 
-            if (0 == _deviceNodesByHardwareId.Count)
-            {
-                throw new InvalidOperationException("_deviceNodesByHardwareId.Count == 0");
-            }
+                if (0 == _deviceNodesByHardwareId.Count)
+                {
+                    throw new InvalidOperationException("_deviceNodesByHardwareId.Count == 0");
+                }
 
-            var deviceNodes = _deviceNodesByHardwareId[hardwareId];
-            return deviceNodes;
+                var deviceNodes = _deviceNodesByHardwareId[hardwareId];
+                return deviceNodes;
+            }
         }
 
         static public DeviceNode GetByInstanceId(string deviceId)
         {
-            if (_deviceNodesByInstanceId.TryGetValue(deviceId, out DeviceNode? node))
+            lock (_deviceNodesByInstanceId)
+            lock (_deviceNodesByHardwareId)
+            lock (_deviceNodesByDevInst)
             {
-                return node;
-            }
-            unsafe
-            {
-                fixed (char* usDeviceID = deviceId)
+                if (_deviceNodesByInstanceId.TryGetValue(deviceId, out DeviceNode? node))
                 {
-                    uint devNode = 0;
-                    Windows.Win32.Foundation.PWSTR devNodeName = usDeviceID;
-                    var ret = PInvoke.CM_Locate_DevNode(&devNode, devNodeName, CM_LOCATE_DEVNODE_FLAGS.CM_LOCATE_DEVNODE_PHANTOM);
-                    if (CONFIGRET.CR_SUCCESS != ret)
+                    return node;
+                }
+                unsafe
+                {
+                    fixed (char* usDeviceID = deviceId)
                     {
-                        throw new KeyNotFoundException($"CM_Locate_DevNode {deviceId} failed with {ret}");
-                    }
+                        uint devNode = 0;
+                        Windows.Win32.Foundation.PWSTR devNodeName = usDeviceID;
+                        var ret = PInvoke.CM_Locate_DevNode(&devNode, devNodeName, CM_LOCATE_DEVNODE_FLAGS.CM_LOCATE_DEVNODE_PHANTOM);
+                        if (CONFIGRET.CR_SUCCESS != ret)
+                        {
+                            throw new KeyNotFoundException($"CM_Locate_DevNode {deviceId} failed with {ret}");
+                        }
 
-                    DeviceNode deviceNode = new(devNode);
-                    Cache(deviceNode);
-                    return deviceNode;
+                        DeviceNode deviceNode = new(devNode);
+                        Cache(deviceNode);
+                        return deviceNode;
+                    }
                 }
             }
-
         }
 
         static private uint GetDnInst(string deviceId, DEVPROPKEY propKey)
