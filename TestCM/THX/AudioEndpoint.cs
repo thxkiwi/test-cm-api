@@ -13,8 +13,9 @@ namespace THX
         private static string RegistryRoot = @"SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\{0}\{1}";
 
         private static readonly Dictionary<PropertyKey, string> KeyToName = (new Dictionary<PROPERTYKEY, string>{
+            { PInvoke.PKEY_CompositeFX_StreamEffectClsid, "PKEY_CompositeFX_StreamEffectClsid" },
             { PInvoke.PKEY_CompositeFX_ModeEffectClsid, "PKEY_CompositeFX_ModeEffectClsid" },
-            { PInvoke.PKEY_CompositeFX_EndpointEffectClsid, "PKEY_CompositeFX_ModeEffectClsid" },
+            { PInvoke.PKEY_CompositeFX_EndpointEffectClsid, "PKEY_CompositeFX_EndpointEffectClsid" },
             { PInvoke.PKEY_CompositeFX_Offload_StreamEffectClsid, "PKEY_CompositeFX_Offload_StreamEffectClsid" },
             { PInvoke.PKEY_CompositeFX_Offload_ModeEffectClsid, "PKEY_CompositeFX_Offload_ModeEffectClsid" },
             { PInvoke.PKEY_SFX_ProcessingModes_Supported_For_Streaming, "PKEY_SFX_ProcessingModes_Supported_For_Streaming" },
@@ -105,28 +106,21 @@ namespace THX
             AudioProcessingObjects = new();
             UnresolvedAudioProcessingObjects = new();
 
-            // Get the siblings that are AudioProcessingObjects
-            var siblingAPOs = deviceNode.Siblings
-                .Where(s => s.GetProperty<Guid>(PInvoke.DEVPKEY_Device_ClassGuid)
-                                           .Equals(DeviceClass.AudioProcessingObject))
-                .Select(s => new AudioProcessingObjectInf(s));
+            // Get all of the AudioProcessingObjectInfs that are available on
+            // the system.
+            var systemAudioProcessingObjectInfs = DeviceClass.GetDeviceIds(DeviceClass.AudioProcessingObject)
+                .Select(s => new AudioProcessingObjectInf(DeviceNode.GetByInstanceId(s)));
 
-            // Form the set union of the AudioProcessingObjects
-            var apos = siblingAPOs.SelectMany(s => s.AudioProcessingObjects)
+            // Form the set union of the AudioProcessingObjects obtained from
+            // all INFs and map them from CLSID to AudioProcessingObject.
+            var systemAudioProcessingObjectsByClsid 
+                = systemAudioProcessingObjectInfs
+                .SelectMany(s => s.AudioProcessingObjects)
                 .ToDictionary(apo => apo.ClassId, apo => apo);
-
-            // Projects built against WDK 10.0.22000.0 allow one to run on 
-            // earlier versions of Windows 10. However, the Windows audio
-            // before 10.0.22000.0 does not query the AudioProcessingObject 
-            // software keys. 
-
-            if (Environment.OSVersion.Version < new Version(10, 0, 22000, 0))
-            {
-                return;
-            }
 
             // Build the Dictionary of AudioProcessingObjects
             foreach (var apoSlot in new PROPERTYKEY[]{
+                            PInvoke.PKEY_CompositeFX_StreamEffectClsid,
                             PInvoke.PKEY_CompositeFX_ModeEffectClsid,
                             PInvoke.PKEY_CompositeFX_EndpointEffectClsid,
                             PInvoke.PKEY_CompositeFX_Offload_StreamEffectClsid,
@@ -135,38 +129,65 @@ namespace THX
                     .Select(k => PropertyKey.From(k))
                 )
             {
-                var clsids = (GetProperty<PropertyKey, string[]>(
-                    apoSlot,
-                    PropertyLocation.Effects
-                ) ?? [])
-                .Select(s => Guid.Parse(s));
+                Console.Error.Write($"Processing {KeyToName[apoSlot]}: ");
 
-                foreach (var clsid in clsids)
+                var clsidsForAPOSlot = (GetProperty<PropertyKey, string[]>(
+                        apoSlot,
+                        PropertyLocation.Effects
+                    ) ?? [])
+                    .Select(s => Guid.Parse(s));
+
+                Console.Error.WriteLine($"Found {clsidsForAPOSlot.Count()} [{
+                    string.Join(", ", 
+                        clsidsForAPOSlot.Select(g => g.ToString("B")))
+                    }]");
+
+                foreach (var clsidInSlot in clsidsForAPOSlot)
                 {
-                    if (!apos.TryGetValue(clsid, out AudioProcessingObject? apo))
+                    // Look for an APO for this CLSID in the sibling
+                    // AudioProcessingObjectInfs.
+                    if (!systemAudioProcessingObjectsByClsid.TryGetValue(
+                            clsidInSlot, 
+                            out AudioProcessingObject? apo))
                     {
-                        // An APO with the given CLSID was not found in an AudioProcessingObject
-                        // software key. Attempt to instantiate by CLSID.
+                        // An APO with the given CLSID was not found in any of
+                        // the sibling AudioProcessingObjectINF's software keys.
+                        //
+                        // This is not an error condition. The CLSID may be 
+                        // registered in HKCR, or by an AudioProcessingObject INF
+                        // that is not a sibling of this device.
+                        //
+                        // Attempt to instantiate directly by CLSID which reads from HKCR.
                         try
                         {
-                            apo = new AudioProcessingObject(clsid);
+                            apo = new AudioProcessingObject(clsidInSlot);
                         }
                         catch (KeyNotFoundException)
                         {
-                            // An APO with the given CLSID was not found in the registry.
-                            // This is not an error condition.
-                            UnresolvedAudioProcessingObjects.Add(clsid);
+                            // The CLSID was not found in HKCR.
+                            UnresolvedAudioProcessingObjects.Add(clsidInSlot);
+                            continue;
+                        }
+                        catch (Exception e)
+                        {
+                            Console.Error.WriteLine(
+                                $"Unable to resolve AudioProcessingObject {clsidInSlot.ToString("B")}: {e}");
+
+                            UnresolvedAudioProcessingObjects.Add(clsidInSlot);
                             continue;
                         }
                     }
 
+                    // The CLSID was resolved.
+                    //
+                    // Add it to the AudioProcessingObjects for the given slot.
                     List<AudioProcessingObject>? audioProcessingObjects;
                     if (!AudioProcessingObjects.TryGetValue(apoSlot, out audioProcessingObjects))
                     {
                         audioProcessingObjects = new();
                         AudioProcessingObjects.Add(apoSlot, audioProcessingObjects);
                     }
-
+                    
                     audioProcessingObjects.Add(apo);
                 }
             }
