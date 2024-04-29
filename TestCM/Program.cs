@@ -29,7 +29,7 @@ foreach (var device in THX.DeviceClass.GetDeviceIds(THX.DeviceClass.Media)
 /// 
 /// Because the media devices are cached above, calling GetByHardwareId for the
 /// _after_ the media devices have been cached will be fast.
-Console.WriteLine("Retireve all devices that match a compatible hardtware ID...");
+Console.WriteLine("Retrieve all devices that match a compatible hardtware ID...");
 
 foreach (var device in DeviceNode.GetByHardwareId("USB\\VID_1532&PID_0529&MI_00"))
 {
