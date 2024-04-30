@@ -157,9 +157,9 @@ namespace THX
                     case DEVPROPTYPE.DEVPROP_TYPE_BINARY:
                         return string.Join(",", GetPropertyValue<byte[]>(prop).Select(b => $"{b:X2}"));
                     case DEVPROPTYPE.DEVPROP_TYPE_UINT32:
-                        return GetPropertyValue<int>(prop).ToString();
+                        return "0x" + GetPropertyValue<int>(prop).ToString("x8");
                     case DEVPROPTYPE.DEVPROP_TYPE_UINT64:
-                        return GetPropertyValue<long>(prop).ToString();
+                        return "0x" + GetPropertyValue<long>(prop).ToString("x16");
                     case DEVPROPTYPE.DEVPROP_TYPE_GUID:
                         return GetPropertyValue<Guid>(prop).ToString("B");
                     case DEVPROPTYPE.DEVPROP_TYPE_NTSTATUS:
