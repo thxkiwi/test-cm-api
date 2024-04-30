@@ -1,4 +1,7 @@
-﻿using Microsoft.Win32;
+﻿//#define ConsoleLoggingEnabled 
+
+using Microsoft.Win32;
+using System.Text;
 using Windows.Win32;
 using Windows.Win32.UI.Shell.PropertiesSystem;
 
@@ -12,7 +15,7 @@ namespace THX
     {
         private static string RegistryRoot = @"SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\{0}\{1}";
 
-        private static readonly Dictionary<PropertyKey, string> KeyToName = (new Dictionary<PROPERTYKEY, string>{
+        private static readonly Dictionary<PropertyKey, string> KeyToName = (new Dictionary<PROPERTYKEY, string>(){
             { PInvoke.PKEY_CompositeFX_StreamEffectClsid, "PKEY_CompositeFX_StreamEffectClsid" },
             { PInvoke.PKEY_CompositeFX_ModeEffectClsid, "PKEY_CompositeFX_ModeEffectClsid" },
             { PInvoke.PKEY_CompositeFX_EndpointEffectClsid, "PKEY_CompositeFX_EndpointEffectClsid" },
@@ -23,11 +26,38 @@ namespace THX
             { PInvoke.PKEY_MFX_ProcessingModes_Supported_For_Streaming, "PKEY_MFX_ProcessingModes_Supported_For_Streaming" },
             { PInvoke.PKEY_MFX_Offload_ProcessingModes_Supported_For_Streaming, "PKEY_MFX_Offload_ProcessingModes_Supported_For_Streaming" },
             { PInvoke.PKEY_EFX_ProcessingModes_Supported_For_Streaming, "PKEY_EFX_ProcessingModes_Supported_For_Streaming" },
-            { PInvoke.PKEY_FX_Association, "PKEY_FX_Association" }
-        }).Select(pk => (PropertyKey.From(pk.Key), pk.Value)).ToDictionary();
+            { PInvoke.PKEY_FX_Association, "PKEY_FX_Association" },
+            { PInvoke.PKEY_AudioEndpoint_Association, "PKEY_AudioEndpoint_Association" }
+        }).ToDictionary(kv => PropertyKey.From(kv.Key), kv => kv.Value);
 
-        private static readonly Dictionary<Guid, string> ProcessingModesForStreaming = new Dictionary<Guid, string>
+        private static readonly Dictionary<Guid, string> GuidToName = new()
         {
+            // KSNODETYPE_*
+            { Guid.Parse("DFF21BE0-F70F-11D0-B917-00A0C9223196"), "KSNODETYPE_INPUT_UNDEFINED" },
+            { Guid.Parse("DFF21BE1-F70F-11D0-B917-00A0C9223196"), "KSNODETYPE_MICROPHONE" },
+            { Guid.Parse("DFF21BE2-F70F-11D0-B917-00A0C9223196"), "KSNODETYPE_DESKTOP_MICROPHONE" },
+            { Guid.Parse("DFF21BE3-F70F-11D0-B917-00A0C9223196"), "KSNODETYPE_PERSONAL_MICROPHONE" },
+            { Guid.Parse("DFF21BE4-F70F-11D0-B917-00A0C9223196"), "KSNODETYPE_OMNI_DIRECTIONAL_MICROPHONE" },
+            { Guid.Parse("DFF21BE5-F70F-11D0-B917-00A0C9223196"), "KSNODETYPE_MICROPHONE_ARRAY" },
+            { Guid.Parse("DFF21BE6-F70F-11D0-B917-00A0C9223196"), "KSNODETYPE_PROCESSING_MICROPHONE_ARRAY" },
+            { Guid.Parse("DFF21CE0-F70F-11D0-B917-00A0C9223196"), "KSNODETYPE_OUTPUT_UNDEFINED" },
+            { Guid.Parse("DFF21CE1-F70F-11D0-B917-00A0C9223196"), "KSNODETYPE_SPEAKER" },
+            { Guid.Parse("DFF21CE2-F70F-11D0-B917-00A0C9223196"), "KSNODETYPE_HEADPHONES" },
+            { Guid.Parse("DFF21CE3-F70F-11D0-B917-00A0C9223196"), "KSNODETYPE_HEAD_MOUNTED_DISPLAY_AUDIO" },
+            { Guid.Parse("DFF21CE4-F70F-11D0-B917-00A0C9223196"), "KSNODETYPE_DESKTOP_SPEAKER" },
+            { Guid.Parse("DFF21CE5-F70F-11D0-B917-00A0C9223196"), "KSNODETYPE_ROOM_SPEAKER" },
+            { Guid.Parse("DFF21CE6-F70F-11D0-B917-00A0C9223196"), "KSNODETYPE_COMMUNICATION_SPEAKER" },
+            { Guid.Parse("DFF21DE0-F70F-11D0-B917-00A0C9223196"), "KSNODETYPE_BIDIRECTIONAL_UNDEFINED" },
+            { Guid.Parse("DFF21DE1-F70F-11D0-B917-00A0C9223196"), "KSNODETYPE_HANDSET" },
+            { Guid.Parse("DFF21DE2-F70F-11D0-B917-00A0C9223196"), "KSNODETYPE_HEADSET" },
+            { Guid.Parse("DFF21DE3-F70F-11D0-B917-00A0C9223196"), "KSNODETYPE_SPEAKERPHONE_NO_ECHO_REDUCTION" },
+            { Guid.Parse("DFF21DE4-F70F-11D0-B917-00A0C9223196"), "KSNODETYPE_ECHO_SUPPRESSING_SPEAKERPHONE" },
+            { Guid.Parse("DFF21DE5-F70F-11D0-B917-00A0C9223196"), "KSNODETYPE_ECHO_CANCELING_SPEAKERPHONE" },
+            { Guid.Parse("DFF21EE0-F70F-11D0-B917-00A0C9223196"), "KSNODETYPE_TELEPHONY_UNDEFINED" },
+            { Guid.Parse("DFF21EE1-F70F-11D0-B917-00A0C9223196"), "KSNODETYPE_PHONE_LINE" },
+            { Guid.Parse("DFF21EE2-F70F-11D0-B917-00A0C9223196"), "KSNODETYPE_TELEPHONE" },
+
+            // AUDIO_SIGNALPROCESSINGMODE_*
             { Guid.Parse("C18E2F7E-933D-4965-B7D1-1EEF228D2AF3"), "Default" },
             { Guid.Parse("9E90EA20-B493-4FD1-A1A8-7E1361A956CF"), "Raw" },
             { Guid.Parse("B26FEB0D-EC94-477C-9494-D1AB8E753F6E"), "Movies" },
@@ -119,29 +149,30 @@ namespace THX
                 .ToDictionary(apo => apo.ClassId, apo => apo);
 
             // Build the Dictionary of AudioProcessingObjects
-            foreach (var apoSlot in new PROPERTYKEY[]{
-                            PInvoke.PKEY_CompositeFX_StreamEffectClsid,
-                            PInvoke.PKEY_CompositeFX_ModeEffectClsid,
-                            PInvoke.PKEY_CompositeFX_EndpointEffectClsid,
-                            PInvoke.PKEY_CompositeFX_Offload_StreamEffectClsid,
-                            PInvoke.PKEY_CompositeFX_Offload_ModeEffectClsid
-                        }
-                    .Select(k => PropertyKey.From(k))
+            foreach (var apoSlot in (new []{
+                        PInvoke.PKEY_CompositeFX_StreamEffectClsid,
+                        PInvoke.PKEY_CompositeFX_ModeEffectClsid,
+                        PInvoke.PKEY_CompositeFX_EndpointEffectClsid,
+                        PInvoke.PKEY_CompositeFX_Offload_StreamEffectClsid,
+                        PInvoke.PKEY_CompositeFX_Offload_ModeEffectClsid
+                    }).Select(x => PropertyKey.From(x))
                 )
             {
+#if ConsoleLoggingEnabled
                 Console.Error.Write($"Processing {KeyToName[apoSlot]}: ");
-
+#endif
                 var clsidsForAPOSlot = (GetProperty<PropertyKey, string[]>(
                         apoSlot,
                         PropertyLocation.Effects
                     ) ?? [])
                     .Select(s => Guid.Parse(s));
 
+#if ConsoleLoggingEnabled
                 Console.Error.WriteLine($"Found {clsidsForAPOSlot.Count()} [{
                     string.Join(", ", 
                         clsidsForAPOSlot.Select(g => g.ToString("B")))
                     }]");
-
+#endif
                 foreach (var clsidInSlot in clsidsForAPOSlot)
                 {
                     // Look for an APO for this CLSID in the sibling
@@ -227,6 +258,48 @@ namespace THX
 
         public void WriteDetailed(TextWriter writer, string prefix = "")
         {
+            PropertyKey AudioEndpointAssociation
+                = PropertyKey.From(PInvoke.PKEY_AudioEndpoint_Association);
+
+            string endpointAssociationNodeType
+                = GetProperty<PropertyKey, string>(
+                    AudioEndpointAssociation,
+                    PropertyLocation.Endpoint) 
+                ?? "<not found>";
+
+            string endpointAssociationNodeTypeName
+                = GuidToName.TryGetValue(
+                    Guid.Parse(endpointAssociationNodeType), 
+                    out string? name)
+                ? name
+                : "<unknown>";
+           
+            StringBuilder sb = new();
+            sb.Append($"{prefix}{AudioEndpointAssociation} [{KeyToName[AudioEndpointAssociation]}] : ");
+            sb.Append($"{endpointAssociationNodeType} [{endpointAssociationNodeTypeName}]");
+            writer.WriteLine(sb.ToString());
+
+            PropertyKey FxAssociation
+                = PropertyKey.From(PInvoke.PKEY_FX_Association);
+
+            string fxAssociationNodeType
+                = GetProperty<PropertyKey, string>(
+                    FxAssociation,
+                    PropertyLocation.Effects)
+                ?? "<not found>";
+
+            string fxAssociationNodeTypeName
+                = GuidToName.TryGetValue(
+                    Guid.Parse(fxAssociationNodeType),
+                    out name)
+                ? name
+                : "<unknown>";
+
+            sb = new();
+            sb.Append($"{prefix}{FxAssociation} [{KeyToName[FxAssociation]}] : ");
+            sb.Append($"{fxAssociationNodeType} [{fxAssociationNodeTypeName}]");
+            writer.WriteLine(sb.ToString());
+
             writer.WriteLine($"{prefix}AudioProcessingObjects            : {AudioProcessingObjects.Count}");
             foreach (var apoSlot in AudioProcessingObjects)
             {
@@ -249,7 +322,7 @@ namespace THX
 
                 foreach (var mode in value)
                 {
-                    if (ProcessingModesForStreaming.TryGetValue(Guid.Parse(mode), out string? modeName))
+                    if (GuidToName.TryGetValue(Guid.Parse(mode), out string? modeName))
                     {
                         writer.Write($"{modeName} ");
                     }
