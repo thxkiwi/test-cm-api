@@ -1,6 +1,7 @@
 ﻿//#define ConsoleLoggingEnabled 
 
 using Microsoft.Win32;
+using System.Reflection.Metadata.Ecma335;
 using System.Text;
 using Windows.Win32;
 using Windows.Win32.UI.Shell.PropertiesSystem;
@@ -33,6 +34,7 @@ namespace THX
         private static readonly Dictionary<Guid, string> GuidToName = new()
         {
             // KSNODETYPE_*
+            { Guid.Empty, "KSNODETYPE_ANY" },
             { Guid.Parse("DFF21BE0-F70F-11D0-B917-00A0C9223196"), "KSNODETYPE_INPUT_UNDEFINED" },
             { Guid.Parse("DFF21BE1-F70F-11D0-B917-00A0C9223196"), "KSNODETYPE_MICROPHONE" },
             { Guid.Parse("DFF21BE2-F70F-11D0-B917-00A0C9223196"), "KSNODETYPE_DESKTOP_MICROPHONE" },
@@ -164,8 +166,7 @@ namespace THX
                 var clsidsForAPOSlot = (GetProperty<PropertyKey, string[]>(
                         apoSlot,
                         PropertyLocation.Effects
-                    ) ?? [])
-                    .Select(s => Guid.Parse(s));
+                    ) ?? []);
 
 #if ConsoleLoggingEnabled
                 Console.Error.WriteLine($"Found {clsidsForAPOSlot.Count()} [{
@@ -173,8 +174,15 @@ namespace THX
                         clsidsForAPOSlot.Select(g => g.ToString("B")))
                     }]");
 #endif
-                foreach (var clsidInSlot in clsidsForAPOSlot)
+                foreach (var clsidInSlotStr in clsidsForAPOSlot ?? [])
                 {
+                    if (null == clsidInSlotStr)
+                    {
+                        continue;
+                    }
+
+                    Guid clsidInSlot = Guid.Parse(clsidInSlotStr);
+
                     // Look for an APO for this CLSID in the sibling
                     // AudioProcessingObjectInfs.
                     if (!systemAudioProcessingObjectsByClsid.TryGetValue(
@@ -243,12 +251,10 @@ namespace THX
 
             if (null == propertyStore)
             {
-                throw new ArgumentException($"Failed to open registry key {location}");
+                return null;
             }
 
-            var value = Registry.GetValue(propertyStore, key, default(ValueT));
-
-            return value;
+            return propertyStore.GetValue(key.ToString()) as ValueT;
         }
 
         public override string ToString()
@@ -261,43 +267,47 @@ namespace THX
             PropertyKey AudioEndpointAssociation
                 = PropertyKey.From(PInvoke.PKEY_AudioEndpoint_Association);
 
-            string endpointAssociationNodeType
+            string? endpointAssociationNodeType
                 = GetProperty<PropertyKey, string>(
                     AudioEndpointAssociation,
-                    PropertyLocation.Endpoint) 
-                ?? "<not found>";
+                    PropertyLocation.Endpoint);
 
-            string endpointAssociationNodeTypeName
-                = GuidToName.TryGetValue(
-                    Guid.Parse(endpointAssociationNodeType), 
-                    out string? name)
-                ? name
-                : "<unknown>";
+            string endpointAssociationNodeTypeName = endpointAssociationNodeType switch
+            {
+                null => "<unknown>",
+                _ => GuidToName.TryGetValue(
+                        Guid.Parse(endpointAssociationNodeType),
+                        out string ? name)
+                    ? name
+                    : "<unknown>"
+            };
            
             StringBuilder sb = new();
             sb.Append($"{prefix}{AudioEndpointAssociation} [{KeyToName[AudioEndpointAssociation]}] : ");
-            sb.Append($"{endpointAssociationNodeType} [{endpointAssociationNodeTypeName}]");
+            sb.Append($"{endpointAssociationNodeType ?? "<unknown>"} [{endpointAssociationNodeTypeName}]");
             writer.WriteLine(sb.ToString());
 
             PropertyKey FxAssociation
                 = PropertyKey.From(PInvoke.PKEY_FX_Association);
 
-            string fxAssociationNodeType
+            string? fxAssociationNodeType
                 = GetProperty<PropertyKey, string>(
                     FxAssociation,
-                    PropertyLocation.Effects)
-                ?? "<not found>";
+                    PropertyLocation.Effects);
 
-            string fxAssociationNodeTypeName
-                = GuidToName.TryGetValue(
-                    Guid.Parse(fxAssociationNodeType),
-                    out name)
-                ? name
-                : "<unknown>";
+            string fxAssociationNodeTypeName = fxAssociationNodeType switch
+            {
+                null => "<unknown>",
+                _ => GuidToName.TryGetValue(
+                        Guid.Parse(fxAssociationNodeType),
+                        out string ? name)
+                    ? name
+                    : "<unknown>"
+            };
 
             sb = new();
             sb.Append($"{prefix}{FxAssociation} [{KeyToName[FxAssociation]}] : ");
-            sb.Append($"{fxAssociationNodeType} [{fxAssociationNodeTypeName}]");
+            sb.Append($"{fxAssociationNodeType ?? "<unknown>"} [{fxAssociationNodeTypeName}]");
             writer.WriteLine(sb.ToString());
 
             writer.WriteLine($"{prefix}AudioProcessingObjects            : {AudioProcessingObjects.Count}");
