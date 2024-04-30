@@ -14,6 +14,7 @@ foreach (var device in THX.DeviceClass.GetDeviceIds(THX.DeviceClass.Media)
     Console.WriteLine();
 }
 
+#if false
 /// DeviceNode instances are cached by
 /// - Instance Id
 /// - Hardware Id
@@ -38,3 +39,4 @@ foreach (var device in DeviceNode.GetByHardwareId("USB\\VID_1532&PID_0529&MI_00"
     Console.WriteLine(new string('-', 80));
     Console.WriteLine();
 }
+#endif
