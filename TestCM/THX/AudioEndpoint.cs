@@ -1,9 +1,11 @@
 ﻿//#define ConsoleLoggingEnabled 
 
 using Microsoft.Win32;
+using System.IO.Compression;
 using System.Reflection.Metadata.Ecma335;
 using System.Text;
 using Windows.Win32;
+using Windows.Win32.System.Registry;
 using Windows.Win32.UI.Shell.PropertiesSystem;
 
 namespace THX
@@ -14,6 +16,8 @@ namespace THX
     /// \todo Port to PInvoke using ActivateAudioInterfaceAsync to get IAudioEffectsPropertyStore.
     public class AudioEndpoint
     {
+        private static readonly int nBytesCompressAt = 256;
+
         private static string RegistryRoot = @"SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\{0}\{1}";
 
         private static readonly Dictionary<PropertyKey, string> KeyToName = (new Dictionary<PROPERTYKEY, string>(){
@@ -28,7 +32,7 @@ namespace THX
             { PInvoke.PKEY_MFX_Offload_ProcessingModes_Supported_For_Streaming, "PKEY_MFX_Offload_ProcessingModes_Supported_For_Streaming" },
             { PInvoke.PKEY_EFX_ProcessingModes_Supported_For_Streaming, "PKEY_EFX_ProcessingModes_Supported_For_Streaming" },
             { PInvoke.PKEY_FX_Association, "PKEY_FX_Association" },
-            { PInvoke.PKEY_AudioEndpoint_Association, "PKEY_AudioEndpoint_Association" }
+            { PInvoke.PKEY_AudioEndpoint_Association, "PKEY_AudioEndpoint_Association" },
         }).ToDictionary(kv => PropertyKey.From(kv.Key), kv => kv.Value);
 
         private static readonly Dictionary<Guid, string> GuidToName = new()
@@ -238,23 +242,70 @@ namespace THX
             Effects
         }
 
+        private PropertyKey[] GetPropertyKeys(RegistryKey? propertyStore)
+        {
+            return propertyStore?.GetValueNames()
+                    .Select(s => PropertyKey.Parse(s))
+                    .Where(pk => !pk.Equals(PropertyKey.Empty))
+                    .ToArray()
+                ?? [];
+        }
+
+        public PropertyKey[] GetPropertyKeys(PropertyLocation location)
+        {
+            return location switch
+            {
+                PropertyLocation.Endpoint => 
+                    GetPropertyKeys(RegistryKey.OpenSubKey("Properties")) ?? [],
+
+                PropertyLocation.Effects => 
+                    GetPropertyKeys(RegistryKey.OpenSubKey("FXProperties")) ?? [],
+
+                _ => []
+            };
+        }
+
+        private ValueT GetProperty<KeyT, ValueT>(KeyT key, RegistryKey? propertyStore, ValueT vt = default(ValueT))
+            where ValueT : struct
+            where KeyT : class
+        {
+            return (ValueT)propertyStore?.GetValue(key.ToString())!;
+        }
+
+        private ValueT? GetProperty<KeyT, ValueT>(KeyT key, RegistryKey? propertyStore)
+            where ValueT : class?
+            where KeyT : class
+        {
+            return propertyStore?.GetValue(key.ToString()) as ValueT;
+        }
+
         public ValueT? GetProperty<KeyT, ValueT>(KeyT key, PropertyLocation location = PropertyLocation.Endpoint)
             where ValueT : class?
             where KeyT : class
         {
-            RegistryKey? propertyStore = location switch
+            RegistryKey? propertyStore = GetPropertyStore(location);
+            return GetProperty<KeyT, ValueT>(key, propertyStore);
+        }
+
+        private RegistryValueKind? GetPropertyKind(PropertyKey key, RegistryKey? propertyStore)
+        {
+            return propertyStore?.GetValueKind(key.ToString());
+        }
+
+        public RegistryValueKind? GetPropertyKind(PropertyKey key, PropertyLocation location)
+        {
+            RegistryKey? propertyStore = GetPropertyStore(location);
+            return GetPropertyKind(key, propertyStore);
+        }
+
+        private RegistryKey? GetPropertyStore(PropertyLocation location)
+        {
+            return location switch
             {
                 PropertyLocation.Endpoint => RegistryKey.OpenSubKey("Properties"),
                 PropertyLocation.Effects => RegistryKey.OpenSubKey("FXProperties"),
-                _ => throw new ArgumentException($"Invalid location: {location}")
+                _ => null
             };
-
-            if (null == propertyStore)
-            {
-                return null;
-            }
-
-            return propertyStore.GetValue(key.ToString()) as ValueT;
         }
 
         public override string ToString()
@@ -262,55 +313,90 @@ namespace THX
             return $"({DataFlow}) {MMDeviceID}";
         }
 
+        private void WriteProperty(
+            TextWriter writer, 
+            PropertyKey key, 
+            RegistryKey propertyStore, 
+            string prefix = "")
+        {
+            string keyName = 
+                KeyToName.TryGetValue(key, out string? name) 
+                ? name 
+                : "<PKEY name unknown>";
+
+            var kind = GetPropertyKind(key, propertyStore);
+            writer.Write($"{prefix}{key,-46} [{keyName}] : [{kind}] ");
+            switch (kind)
+            {
+                case RegistryValueKind.String:
+                    writer.WriteLine($"{GetProperty<PropertyKey, string>(key, propertyStore)}");
+                    break;
+                case RegistryValueKind.MultiString:
+                    writer.WriteLine($"{string.Join(", ", GetProperty<PropertyKey, string[]>(key, propertyStore) ?? [])}");
+                    break;
+                case RegistryValueKind.Binary:
+                    byte[]? raw = GetProperty<PropertyKey, byte[]>(key, propertyStore);
+                    if (nBytesCompressAt < (raw?.Length ?? 0))
+                    {
+                        var s = CompressAndArmorRaw(raw ?? []);
+
+                        // The size of the raw data formatted as ASCII
+                        // 00 per byte, plus a comma between each byte.
+                        var szRawAsAscii = raw?.Length * 2 + raw?.Length - 1 ?? 0;
+                        writer.WriteLine(new StringBuilder($"[Compressed, Armored] ({raw.Length}/{szRawAsAscii}/{s.Length}) ")
+                            .Append(s)
+                            .ToString());
+                    }
+                    else
+                    {
+                        writer.WriteLine(raw?.Select(b => b.ToString("X2"))
+                                             .Aggregate((a, b) => $"{a},{b}")
+                                         ?? "<null>");
+                    }
+                    break;
+                case RegistryValueKind.DWord:
+                    writer.WriteLine($"0x{GetProperty<PropertyKey, int>(key, propertyStore):x8}");
+                    break;
+                case RegistryValueKind.QWord:
+                    writer.WriteLine($"0x{GetProperty<PropertyKey, long>(key, propertyStore):x16}");
+                    break;
+                case RegistryValueKind.None:
+                    writer.WriteLine("<none>");
+                    break;
+                default:
+                    writer.WriteLine($"<unknown> ({kind})");
+                    break;
+            }
+        }
+
         public void WriteDetailed(TextWriter writer, string prefix = "")
         {
-            PropertyKey AudioEndpointAssociation
-                = PropertyKey.From(PInvoke.PKEY_AudioEndpoint_Association);
+            writer.WriteLine($"{prefix}{DeviceNode}");
+            writer.WriteLine($"{prefix}{ToString()}");
 
-            string? endpointAssociationNodeType
-                = GetProperty<PropertyKey, string>(
-                    AudioEndpointAssociation,
-                    PropertyLocation.Endpoint);
-
-            string endpointAssociationNodeTypeName = endpointAssociationNodeType switch
+            RegistryKey? endpointPropertyStore = RegistryKey.OpenSubKey("Properties");
+            var endpointProperties = GetPropertyKeys(endpointPropertyStore);
+            writer.WriteLine($"{prefix}Endpoint Properties                    : ({endpointProperties?.Length ?? 0})");
+            if (null != endpointPropertyStore)
             {
-                null => "<unknown>",
-                _ => GuidToName.TryGetValue(
-                        Guid.Parse(endpointAssociationNodeType),
-                        out string ? name)
-                    ? name
-                    : "<unknown>"
-            };
-           
-            StringBuilder sb = new();
-            sb.Append($"{prefix}{AudioEndpointAssociation} [{KeyToName[AudioEndpointAssociation]}] : ");
-            sb.Append($"{endpointAssociationNodeType ?? "<unknown>"} [{endpointAssociationNodeTypeName}]");
-            writer.WriteLine(sb.ToString());
+                foreach (var key in endpointProperties ?? [])
+                {
+                    WriteProperty(writer, key, endpointPropertyStore, prefix + "\t");
+                }
+            }
 
-            PropertyKey FxAssociation
-                = PropertyKey.From(PInvoke.PKEY_FX_Association);
-
-            string? fxAssociationNodeType
-                = GetProperty<PropertyKey, string>(
-                    FxAssociation,
-                    PropertyLocation.Effects);
-
-            string fxAssociationNodeTypeName = fxAssociationNodeType switch
+            RegistryKey? effectsPropertyStore = RegistryKey.OpenSubKey("FXProperties");
+            var effectsProperties = GetPropertyKeys(effectsPropertyStore);
+            writer.WriteLine($"{prefix}Effects Properties                     : ({effectsProperties?.Length ?? 0})");
+            if (null != effectsPropertyStore)
             {
-                null => "<unknown>",
-                _ => GuidToName.TryGetValue(
-                        Guid.Parse(fxAssociationNodeType),
-                        out string ? name)
-                    ? name
-                    : "<unknown>"
-            };
+                foreach (var key in effectsProperties ?? [])
+                {
+                    WriteProperty(writer, key, effectsPropertyStore, prefix + "\t");
+                }
+            }
 
-            sb = new();
-            sb.Append($"{prefix}{FxAssociation} [{KeyToName[FxAssociation]}] : ");
-            sb.Append($"{fxAssociationNodeType ?? "<unknown>"} [{fxAssociationNodeTypeName}]");
-            writer.WriteLine(sb.ToString());
-
-            writer.WriteLine($"{prefix}AudioProcessingObjects            : {AudioProcessingObjects.Count}");
+            writer.WriteLine($"{prefix}AudioProcessingObject Slots            : {AudioProcessingObjects.Count}");
             foreach (var apoSlot in AudioProcessingObjects)
             {
                 writer.WriteLine($"{prefix}\t{apoSlot.Key} [{KeyToName[apoSlot.Key]}]:");
@@ -322,15 +408,15 @@ namespace THX
 
             foreach (var field in ProcessingModesForStreamingProperties)
             {
-                string[]? value = GetProperty<PropertyKey, string[]>(field, PropertyLocation.Effects);
-                if (null == value)
+                string[]? modesForStreaming = GetProperty<PropertyKey, string[]>(field, PropertyLocation.Effects);
+                if (null == modesForStreaming)
                 {
                     continue;
                 }
 
                 writer.Write($"{prefix}\t{field} [{KeyToName[field]}]: ");
 
-                foreach (var mode in value)
+                foreach (var mode in modesForStreaming)
                 {
                     if (GuidToName.TryGetValue(Guid.Parse(mode), out string? modeName))
                     {
@@ -347,8 +433,34 @@ namespace THX
             writer.WriteLine($"{prefix}Unresolved AudioProcessingObjects : {UnresolvedAudioProcessingObjects.Count}");
             foreach (var clsid in UnresolvedAudioProcessingObjects)
             {
-                writer.WriteLine($"{prefix}\t{clsid}");
+                writer.WriteLine($"{prefix}\t{clsid.ToString("B")}");
             }
+
+            DeviceNode.WriteDetailed(writer, prefix);
+        }
+
+        private static string CompressAndArmorRaw(byte[] raw)
+        {
+            if (raw == null || raw.Length == 0)
+            {
+                return "";
+            }
+
+            // Compress the raw bytes
+            byte[] compressedBytes;
+            using (var memoryStream = new MemoryStream())
+            {
+                using (var gzipStream = new System.IO.Compression.GZipStream(
+                    memoryStream, 
+                    CompressionMode.Compress))
+                {
+                    gzipStream.Write(raw, 0, raw.Length);
+                }
+                compressedBytes = memoryStream.ToArray();
+            }
+
+            // Convert the compressed bytes to a base64 string
+            return Convert.ToBase64String(compressedBytes);
         }
     }
 }

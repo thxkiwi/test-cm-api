@@ -75,6 +75,8 @@ namespace THX
             {
                 audioProcessingObject.WriteDetailed(writer, indent + "\t");
             }
+
+            DeviceNode.WriteDetailed(writer, indent + "\t");
         }
     }
 }

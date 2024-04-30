@@ -5,6 +5,8 @@ namespace THX
 {
     public class PropertyKey
     {
+        public static readonly PropertyKey Empty = new(null, null);
+
         private static DstT? GetField<SrcT, DstT>(SrcT? src, string fieldName, Func<object?, DstT?> f)
         {
             var fields = typeof(SrcT).GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
@@ -135,6 +137,19 @@ namespace THX
             return val;
         }
 
+        public static PropertyKey Parse(string s)
+        {
+            var parts = s.Split(',');
+            if (parts.Length != 2)
+            {
+                return new PropertyKey(null, null);
+            }
+
+            var fmtid = Guid.Parse(parts[0]);
+            var pid = uint.Parse(parts[1]);
+            return new PropertyKey(fmtid, pid);
+        }
+        
         public static PropertyKey From<ValueT>(ValueT key)
         {
             var fmtid = GetValue(key, "fmtid", new Func<object?, Guid?>(ToGuid));

@@ -465,7 +465,10 @@ namespace THX
                     writer.WriteLine($"{indent}\tAudioProcessingObjectInf");
                     new AudioProcessingObjectInf(child).WriteDetailed(writer, indent + "\t");
                 }
-                child.WriteDetailed(writer, indent + "\t");
+                else
+                {
+                    child.WriteDetailed(writer, indent + "\t");
+                }
 
                 writer.WriteLine();
             }
