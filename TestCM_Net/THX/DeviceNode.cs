@@ -404,13 +404,14 @@ namespace THX
             { "Provider", PInvoke.DEVPKEY_Device_DriverProvider },
             { "Driver", PInvoke.DEVPKEY_Device_Driver },
             { "Driver Description", PInvoke.DEVPKEY_Device_DriverDesc },
+            { "Driver INF Path", PInvoke.DEVPKEY_Device_DriverInfPath },
             { "Is Present", PInvoke.DEVPKEY_Device_IsPresent },
             { "Is Reboot Required", PInvoke.DEVPKEY_Device_IsRebootRequired },
             { "Install State", PInvoke.DEVPKEY_Device_InstallState },
             { "Has Problem?", PInvoke.DEVPKEY_Device_HasProblem },
             { "Problem Code", PInvoke.DEVPKEY_Device_ProblemCode },
             { "Problem Status", PInvoke.DEVPKEY_Device_ProblemStatus },
-            { "Driver INF Path", PInvoke.DEVPKEY_Device_DriverInfPath },
+            { "Device Config Flags", PInvoke.DEVPKEY_Device_ConfigFlags },
             { "Children", PInvoke.DEVPKEY_Device_Children },
             { "Siblings", PInvoke.DEVPKEY_Device_Siblings }
         };
@@ -419,7 +420,7 @@ namespace THX
                 .Concat(new[] { "Available Properties", "Extensions", "Children", "AudioProcessingObjects", "Unresolved AudioProcessingObjects" })
                 .Max(s => (uint)s.Length) + 1);
 
-
+    
         public void WriteDetailed(TextWriter writer, string indent = "")
         {
             writer.WriteLine($"{indent}{this}");
