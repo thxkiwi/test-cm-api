@@ -300,7 +300,7 @@ namespace THX
             : this(GetDnInst(deviceId, idPropertyKey))
         { }
 
-        public DeviceNode(uint devNode)
+        internal DeviceNode(uint devNode)
         {
             _devNode = devNode;
 

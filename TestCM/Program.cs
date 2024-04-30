@@ -1,10 +1,9 @@
-﻿using THX;
-using Windows.Win32;
+﻿using Windows.Win32;
 
 Console.WriteLine("Retireve all devices that match the Media device class...");
 
 foreach (var device in THX.DeviceClass.GetDeviceIds(THX.DeviceClass.Media)
-    .Select(deviceInstanceId => new THX.DeviceNode(deviceInstanceId, PInvoke.DEVPKEY_Device_InstanceId))
+    .Select(deviceInstanceId => THX.DeviceNode.GetByInstanceId(deviceInstanceId))
 
     )
 {

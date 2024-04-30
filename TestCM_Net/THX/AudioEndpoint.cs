@@ -119,7 +119,9 @@ namespace THX
             DeviceNode = deviceNode;
             DeviceInstanceId = deviceNode.InstanceID;
 
-            var match = System.Text.RegularExpressions.Regex.Match(DeviceInstanceId, regex);
+            var match = System.Text.RegularExpressions
+                .Regex.Match(DeviceInstanceId, regex);
+
             MMDeviceID = match.Groups[1].Value;
             string dataFlowStr = match.Groups[2].Value;
             EndpointId = Guid.Parse(match.Groups[3].Value);
@@ -127,12 +129,19 @@ namespace THX
             EDataFlow dataFlowEnum;
             if (!Enum.TryParse(dataFlowStr, out dataFlowEnum))
             {
-                throw new ArgumentException($"Invalid device instance id: {DeviceInstanceId}; unknown data flow {dataFlowStr}.");
+                StringBuilder sb = new("Invalid device instance id: ");
+                sb.Append(DeviceInstanceId);
+                sb.Append("; unknown data flow ");
+                sb.Append($"{dataFlowStr}.");
+
+                throw new ArgumentException(sb.ToString());
             }
             DataFlow = dataFlowEnum;
 
             string registryPath = string.Format(RegistryRoot, DataFlow, EndpointId.ToString("B"));
-            var rk = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(registryPath, false);
+            
+            var rk = Microsoft.Win32.Registry.LocalMachine
+                .OpenSubKey(registryPath, false);
             if (null == rk)
             {
                 throw new ArgumentException($"Failed to open registry key {registryPath}");
@@ -144,8 +153,11 @@ namespace THX
 
             // Get all of the AudioProcessingObjectInfs that are available on
             // the system.
-            var systemAudioProcessingObjectInfs = DeviceClass.GetDeviceIds(DeviceClass.AudioProcessingObject)
-                .Select(s => new AudioProcessingObjectInf(DeviceNode.GetByInstanceId(s)));
+            var systemAudioProcessingObjectInfs 
+                = DeviceClass.GetDeviceIds(
+                    DeviceClass.AudioProcessingObject)
+                .Select(s => new AudioProcessingObjectInf(
+                    DeviceNode.GetByInstanceId(s)));
 
             // Form the set union of the AudioProcessingObjects obtained from
             // all INFs and map them from CLSID to AudioProcessingObject.
@@ -343,7 +355,7 @@ namespace THX
                         // The size of the raw data formatted as ASCII
                         // 00 per byte, plus a comma between each byte.
                         var szRawAsAscii = raw?.Length * 2 + raw?.Length - 1 ?? 0;
-                        writer.WriteLine(new StringBuilder($"[Compressed, Armored] ({raw.Length}/{szRawAsAscii}/{s.Length}) ")
+                        writer.WriteLine(new StringBuilder($"[Compressed, Armored] ({raw?.Length ?? 0}/{szRawAsAscii}/{s.Length}) ")
                             .Append(s)
                             .ToString());
                     }
